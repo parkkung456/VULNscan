@@ -8,7 +8,7 @@ import time
 import re
 import threading
 import tldextract
-import shutil  # Add at the top with your other imports
+import shutil
 from urllib.parse import urlsplit
 from datetime import datetime
 
@@ -23,14 +23,13 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-# Vulnerability detection mapping (specific to nmap results)
 VULNERABILITY_PATTERNS = {
     "80/tcp open  http": "l",
-    "23/tcp open telnet": "c",  # Critical (Telnet open)
-    "21/tcp open ftp": "h",     # High (FTP open)
-    "3306/tcp open mysql": "m",  # Medium (MySQL open)
-    "1433/tcp open": "m",  # Medium (MySQL open)
-    "1521/tcp open": "m",  # Medium (MySQL open)
+    "23/tcp open telnet": "c", 
+    "21/tcp open ftp": "h", 
+    "3306/tcp open mysql": "m", 
+    "1433/tcp open": "m", 
+    "1521/tcp open": "m", 
     "does NOT use Load-balancing": "m",
     "[+] Vul [Blind SQL-i]": "m",
     "[+] Vul [SQL-i]": "m",
@@ -48,8 +47,6 @@ def print_banner():
     \_/   \___/|_____|_| \_|____/ \____/_/   \_\_| \_|
     """
     print(ascii_art)
-
-import shutil  # Make sure this is imported at the top
 
 def check_dynamic_tools(tool_list):
     """
@@ -98,7 +95,7 @@ def url_maker(url):
     if not re.match(r'http(s?)\:', url):  # If missing http:// or https://
         url = 'http://' + url  # Default to HTTP if missing
     parsed = urlsplit(url)
-    return parsed.geturl()  # Returns properly formatted URL
+    return parsed.geturl() 
 
 def check_internet():
     """Checks internet connectivity."""
@@ -112,7 +109,7 @@ def loading_animation(event):
         print(f"\rScanning... {animation[i % len(animation)]} ", end='', flush=True)
         i += 1
         time.sleep(0.5)
-    print("\r", end='', flush=True)  # Clears the animation
+    print("\r", end='', flush=True) 
 
 def print_vulnerability_summary(proc_vul_list):
     """Prints a summary of vulnerabilities detected by severity and returns the counts."""
@@ -125,9 +122,8 @@ def print_vulnerability_summary(proc_vul_list):
             if severity in severity_counts:
                 severity_counts[severity] += 1
             else:
-                severity_counts[severity] = 1  # In case an unexpected severity appears
+                severity_counts[severity] = 1  # Unexpected severity appears
 
-    # Map severity codes to human-friendly labels
     severity_labels = {
         "c": "CRITICAL",
         "h": "HIGH",
@@ -135,7 +131,6 @@ def print_vulnerability_summary(proc_vul_list):
         "l": "LOW"
     }
 
-    # Print the summary
     print("\nVulnerability Summary:")
     print("----------------------")
     for sev_code, count in severity_counts.items():
@@ -146,7 +141,7 @@ def print_vulnerability_summary(proc_vul_list):
 
 
 def main():
-    print_banner()  # Display the ASCII art banner at the start
+    print_banner() 
 
     global event  
     parser = argparse.ArgumentParser()
@@ -155,7 +150,7 @@ def main():
 
     target = url_maker(args.target)  # Ensure correct URL format
     target_ip = get_target_ip(target)  # Get the resolved IP address
-    wapiti_target = wapiti_url(target)  # Get the properly formatted Wapiti URL
+    wapiti_target = wapiti_url(target)
 
     if target_ip == "Unknown":
         print(f"{bcolors.BADFAIL}Error: Unable to resolve target IP for {target}. Please check your network or DNS settings.{bcolors.ENDC}")
@@ -176,7 +171,7 @@ def main():
         print(f"{bcolors.BADFAIL}No internet connection. Exiting...{bcolors.ENDC}")
         sys.exit(1)
 
-    # Define your full tool list
+    # Define full tool list
     tool_list = [
         ["nmap", f"nmap -sV {target_ip}"],
         ["nmap_sqlserver", f"nmap -p1433 --open -Pn {target_ip}"],
@@ -193,7 +188,7 @@ def main():
         ["gobuster_directory_traversal", f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"]
     ]
     
-    # Dynamically check tool availability and filter tool_list accordingly.
+    # Dynamically check tool availability and filter tool_list
     tool_list = check_dynamic_tools(tool_list)
     tasks_executed = len(tool_list)
     tools_skipped_count = 0
@@ -228,7 +223,6 @@ def main():
     # Print the vulnerability summary and retrieve counts
     severity_counts = print_vulnerability_summary(proc_vul_list)
 
-    # Print the final summary details
     print("\nFinal Summary:")
     print("----------------------")
     print(f"Total Vulnerability Task check: {tasks_executed}")
@@ -265,10 +259,8 @@ def execute_scan(tool_name, command, target, event):
     }
     scan_message = tool_messages[tool_name.lower()]
 
-    # Print tool execution
     print(f"{bcolors.OKBLUE}Running {tool_name}{bcolors.BOLD}{scan_message}{bcolors.ENDC}", flush=True)
 
-    # Reset skip flag
     skip_current_tool = False
 
     event.clear()
@@ -285,7 +277,7 @@ def execute_scan(tool_name, command, target, event):
         )
         output = result.stdout + result.stderr
 
-        # If tool was skipped, return None and continue with next tool
+        # If tool was skipped, return None
         if skip_current_tool:
             print(f"{bcolors.WARNING}Skipped {tool_name}.{bcolors.ENDC}")
             return None  
@@ -312,7 +304,7 @@ def execute_scan(tool_name, command, target, event):
 
 def wapiti_url(target):
     """Returns the target's resolved IP formatted as HTTP://target_ip."""
-    target_ip = get_target_ip(target)  # Resolve the IP address
+    target_ip = get_target_ip(target) 
 
     if target_ip == "Unknown":
         print(f"{bcolors.BADFAIL}Error: Unable to resolve target IP for {target}.{bcolors.ENDC}")
@@ -324,7 +316,6 @@ def detect_errors(tool_name, output, raw_report_file):
     """Checks scan result for vulnerabilities and writes them to the raw report."""
     detected_vulns = []
 
-    # Write the raw output to the report
     with open(raw_report_file, "a") as report:
         report.write(f"\n== {tool_name} Scan Output ==\n")
         report.write(output + "\n")
@@ -332,10 +323,10 @@ def detect_errors(tool_name, output, raw_report_file):
     for line in output.splitlines():
         line = line.strip()
 
-        # Check for Wapiti-specific patterns for all Wapiti tools
+        
         if tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss", "wapiti_http_headers"]:
-            if re.match(r"^\[\+\].*\(3\)$", line):  # Detects [+] ... (3)
-                detected_vulns.append((line, "m"))  # Mark as Medium severity
+            if re.match(r"^\[\+\].*\(3\)$", line):
+                detected_vulns.append((line, "m"))
                 print(
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
                     f"detected as {bcolors.BADFAIL}MEDIUM{bcolors.ENDC}"
@@ -345,9 +336,7 @@ def detect_errors(tool_name, output, raw_report_file):
         elif tool_name.lower() in ["gobuster_directory_traversal"]:
             # Remove ANSI escape sequences from the line
             clean_line = re.sub(r'\x1B\[[0-?]*[ -/]*[@-~]', '', line)
-            # Check if the cleaned line starts with "/"
             if clean_line.startswith("/"):
-                # Use a regex to extract the HTTP status code, e.g., (Status: 301)
                 status_match = re.search(r"\(Status:\s*(\d+)\)", clean_line)
                 if status_match:
                     status_code = int(status_match.group(1))
@@ -364,7 +353,6 @@ def detect_errors(tool_name, output, raw_report_file):
                             f"detected as {bcolors.BADFAIL}LOW{bcolors.ENDC}"
                         )
 
-        # Check for general vulnerability patterns for other tools
         else:
             for pattern, severity in VULNERABILITY_PATTERNS.items():
                 if pattern.lower() in line.lower():
@@ -395,7 +383,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
         print(f"{bcolors.OKGREEN}Task complete. No vulnerability was found in this task.{bcolors.ENDC}")
         return
 
-    # Custom vulnerability information per tool and severity.
+    # Custom vulnerability information tool and severity.
     vul_info_by_tool = {
         "nmap": {
             "l": "Nmap (Low): Open port detected. Low risk if no sensitive services are running.",
@@ -477,7 +465,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
         }
     }
 
-    # Custom remediation advice per tool and severity.
+    # Custom remediation advice tool and severity.
     vul_reme_by_tool = {
         "nmap": {
             "l": "Review the open ports and disable services that are unnecessary.",
@@ -559,7 +547,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
         }
     }
 
-    # Mapping of tool names to their scan messages.
+    # Mapping of tool names scan messages.
     tool_messages = {
         "nmap": " - Checking for open ports...",
         "nmap_sqlserver": " - Checking for SQL Server...",
@@ -576,7 +564,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
         "gobuster_directory_traversal": " - Checking for Directiory Traversal..."
     }
 
-    # Mapping of tool names to commands from your original tool list.
+    # Mapping of tool names to commands from original tool list.
     tool_command_dict = {
         "nmap": f"nmap -sV {target}",
         "nmap_sqlserver": f"nmap -p1433 --open -Pn {target}",
@@ -593,7 +581,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
         "gobuster_directory_traversal": f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"
     }
 
-    # Helper to convert severity code to human-readable text.
+    # Convert severity code to human-readable text.
     severity_text = {
         "l": "low",
         "m": "medium",
@@ -643,7 +631,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
                 report.write(f"Vulnerability remediation: {reme_text}\n")
                 report.write("\n")
                 
-                # For the raw report, list the aggregated result.
+                # raw report, list the aggregated result.
                 raw_report.write(f"== {tool} Aggregated Findings ==\n")
                 raw_report.write(f"Aggregated Severity: {worst_severity} ({threat_level})\n\n")
             
@@ -654,38 +642,35 @@ def generate_report(proc_vul_list, target, raw_report_file):
         print(f"{bcolors.BADFAIL}Error writing reports: {e}{bcolors.ENDC}")
 
 
-# Global variables
 skip_current_tool = False
-event = threading.Event()  # Create a global threading event
+event = threading.Event()  # global threading event
 
 def signal_handler(sig, frame):
     """Handles CTRL+C (SIGINT) to skip current tool and CTRL+Z (SIGTSTP) to exit immediately."""
     global skip_current_tool, event
 
     if sig == signal.SIGINT:  # CTRL+C → Skip the current tool
-        if not skip_current_tool:  # Prevent multiple "Skipping current tool..." messages
+        if not skip_current_tool:
             skip_current_tool = True  # Set flag to skip current tool
-            event.set()  # Stop loading animation safely
+            event.set()  # Stop loading animation 
 
     elif sig == signal.SIGTSTP:  # CTRL+Z → Exit program immediately
         print(f"\n{bcolors.BADFAIL}Scan interrupted. Exiting immediately...{bcolors.ENDC}")
-        event.set()  # Stop loading animation safely
-        sys.exit(0)  # Stop program immediately
+        event.set()
+        sys.exit(0) 
 
 def get_target_ip(target):
     try:
         parsed_url = urlsplit(target)
         hostname = parsed_url.netloc if parsed_url.netloc else parsed_url.path  
-        # Remove the port if present
         hostname = hostname.split(":")[0]
-        # Use the full hostname instead of stripping subdomains
         ip_address = socket.gethostbyname(hostname)
         return ip_address
     except socket.gaierror:
         return "Unknown"
 
 def main():
-    print_banner()  # Display the ASCII art banner at the start
+    print_banner() 
 
     global event  
     parser = argparse.ArgumentParser()
@@ -764,7 +749,7 @@ def main():
 
     total_time = time.time() - start_time
 
-    # Compute severity counts without printing a separate vulnerability summary
+    # Compute severity counts without printing 
     severity_counts = {"c": 0, "h": 0, "m": 0, "l": 0}
     for tool, vulns in proc_vul_list.items():
         for vuln, severity in vulns:
@@ -773,7 +758,7 @@ def main():
             else:
                 severity_counts[severity] = 1
 
-    # Print final summary details
+    # Print final summary report
     print("\nFinal Summary:")
     print("-----------------------------------------------------------------------------------")
     print(f"Total Vulnerability Task check       : {tasks_executed}")
