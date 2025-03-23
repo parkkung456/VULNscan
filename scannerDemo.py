@@ -1178,5 +1178,5 @@ def main():
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C (skip task)
-    signal.signal(signal.SIGTSTP, signal_handler)  # Handle Ctrl+Z (exit gracefully)
+    signal.signal(signal.SIGQUIT, signal_handler)  # Handle Ctrl+Z (exit gracefully)
     main()
