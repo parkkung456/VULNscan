@@ -12,6 +12,24 @@ import shutil  # Add at the top with your other imports
 from urllib.parse import urlsplit
 from datetime import datetime
 
+# Global version variable
+VERSION = "1.0"
+
+# Help function to display user guide
+def show_help():
+    help_text = """
+Usage: python script.py [options] target
+
+Options:
+  -V, -v           Print the version of this program.
+  -U, -u           Replace every file and directory with:
+                   git clone https://github.com/parkkung456/VULNscan.git
+  -H, -h, help     Show this help message and exit.
+
+If no option is provided, the program runs the normal vulnerability scan.
+"""
+    print(help_text)
+
 # ANSI Colors for Terminal Output
 class bcolors:
     HEADER = '\033[95m'
@@ -143,105 +161,6 @@ def print_vulnerability_summary(proc_vul_list):
         print(f"{label}: {count}")
 
     return severity_counts
-
-
-def main():
-    print_banner()  # Display the ASCII art banner at the start
-
-    global event  
-    parser = argparse.ArgumentParser()
-    parser.add_argument('target', metavar='URL', help='Target URL to scan.')
-    args = parser.parse_args()
-
-    target = url_maker(args.target)  # Ensure correct URL format
-    target_ip = get_target_ip(target)  # Get the resolved IP address
-    wapiti_target = wapiti_url(target)  # Get the properly formatted Wapiti URL
-
-    if target_ip == "Unknown":
-        print(f"{bcolors.BADFAIL}Error: Unable to resolve target IP for {target}. Please check your network or DNS settings.{bcolors.ENDC}")
-        sys.exit(1)
-
-    timestamp = datetime.now().strftime("%d-%m-%Y-%H%M")
-    reports_dir = "scan_reports"
-    os.makedirs(reports_dir, exist_ok=True)
-    raw_report_file = os.path.join(
-        reports_dir,
-        f"{timestamp}-raw_report_{target.replace('http://', '').replace('https://', '').replace('/', '_')}.txt"
-    )
-
-    print(f"\n{bcolors.BOLD}Starting security scan on {bcolors.OKBLUE}{target}{bcolors.ENDC} "
-          f"({bcolors.OKGREEN}IP: {target_ip}{bcolors.ENDC})...\n")
-
-    if not check_internet():
-        print(f"{bcolors.BADFAIL}No internet connection. Exiting...{bcolors.ENDC}")
-        sys.exit(1)
-
-    # Define your full tool list
-    tool_list = [
-        ["nmap", f"nmap -sV {target_ip}"],
-        ["nmap_sqlserver", f"nmap -p1433 --open -Pn {target_ip}"],
-        ["nmap_mysql", f"nmap -p3306 --open -Pn {target_ip}"],
-        ["nmap_oracle", f"nmap -p1521 --open -Pn {target_ip}"],
-        ["nikto", f"nikto -Plugins 'apache_expect_xss' -host {target}"],
-        ["uniscan_rce", f"uniscan -s -u {target}"],
-        ["uniscan_xss", f"uniscan -d -u {target}"],
-        ["lbd", f"lbd {target}"],
-        ["wapiti_sqli", f"wapiti -m sql -u {target} --verbose 2"],
-        ["wapiti_ssrf", f"wapiti -m ssrf -u {target} --verbose 2"],
-        ["wapiti_xss", f"wapiti -m xss -u {target} --verbose 2"],
-        ["wapiti_http_headers", f"wapiti -m http_headers -u {target} --verbose 2"],
-        ["gobuster_directory_traversal", f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"]
-    ]
-    
-    # Dynamically check tool availability and filter tool_list accordingly.
-    tool_list = check_dynamic_tools(tool_list)
-    tasks_executed = len(tool_list)
-    tools_skipped_count = 0
-    proc_vul_list = {}
-    event = threading.Event()
-
-    try:
-        with open(raw_report_file, "w") as file:
-            file.write(f"Raw Scan Report for {target} (IP: {target_ip})\n")
-            file.write("=" * 50 + "\n")
-    except Exception as e:
-        print(f"{bcolors.BADFAIL}Error: Could not write to report file: {e}{bcolors.ENDC}")
-        sys.exit(1)
-
-    start_time = time.time()
-    for i, (tool_name, command) in enumerate(tool_list):
-        output = execute_scan(tool_name, command, target, event)
-
-        # If no output is returned, count it as a skipped tool
-        if output is None:
-            tools_skipped_count += 1
-            continue
-
-        detected_vulns = detect_errors(tool_name, output, raw_report_file)
-        if detected_vulns:
-            proc_vul_list[tool_name] = detected_vulns
-        else:
-            print(f"{bcolors.OKGREEN}Task complete. No vulnerability was found in this task for {tool_name}.{bcolors.ENDC}")
-
-    total_time = time.time() - start_time
-
-    # Print the vulnerability summary and retrieve counts
-    severity_counts = print_vulnerability_summary(proc_vul_list)
-
-    # Print the final summary details
-    print("\nFinal Summary:")
-    print("----------------------")
-    print(f"Total Vulnerability Task check: {tasks_executed}")
-    print(f"Total Tool skipped: {tools_skipped_count}")
-    print("Total Vulnerability Thread detected:")
-    print(f"    CRITICAL: {severity_counts.get('c', 0)}")
-    print(f"    HIGH: {severity_counts.get('h', 0)}")
-    print(f"    MEDIUM: {severity_counts.get('m', 0)}")
-    print(f"    LOW: {severity_counts.get('l', 0)}")
-    print(f"Total time from scan: {total_time:.2f} seconds")
-
-    generate_report(proc_vul_list, target, raw_report_file)
-
 
 def execute_scan(tool_name, command, target, event):
     """Executes the scanning tool dynamically and allows skipping on CTRL+C."""
@@ -661,10 +580,10 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
       - Pie Charts:
           1. Severity Breakdown
           2. Vulnerability Detected by Tool
+          3. Vulnerability Category Breakdown
       - Detailed Tool Results Table
     """
-    import os
-    import json
+    import os, json
     from datetime import datetime
 
     # -------------------------------------------------------------------------
@@ -754,10 +673,10 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
 
     vul_reme_by_tool = {
         "nmap": {
-            "l": "Review the open ports and disable unnecessary services.",
+            "l": "Review the open ports and disable services that are unnecessary.",
             "m": "Update the vulnerable service and check secure configuration options.",
-            "h": "Apply security patches immediately and restrict external access.",
-            "c": "Isolate and patch immediately; a full security audit is strongly recommended."
+            "h": "Apply security patches immediately and restrict access to this service.",
+            "c": "Isolate the affected system and perform a full security audit; patch immediately."
         },
         "nmap_sqlserver": {
             "l": "Ensure SQL Server is secured with proper authentication and firewall rules.",
@@ -802,7 +721,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
             "c": "Perform an immediate security audit of the load balancing setup."
         },
         "wapiti_sqli": {
-            "l": "Review SQL query constructions and disable unnecessary DB features.",
+            "l": "Review SQL query constructions and disable unnecessary database features.",
             "m": "Apply input sanitization and update vulnerable SQL queries.",
             "h": "Implement parameterized queries and secure database access.",
             "c": "Immediately patch the SQL injection vulnerability and perform a full database audit."
@@ -823,12 +742,12 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
             "l": "Review HTTP header configurations; minor adjustments may be sufficient.",
             "m": "Update server configurations to enforce security headers.",
             "h": "Apply strict security policies on HTTP headers immediately.",
-            "c": "Enforce comprehensive security headers and perform a server audit."
+            "c": "Immediately enforce comprehensive security headers and perform a server audit."
         },
         "gobuster_directory_traversal": {
             "l": "Review directory permissions; only necessary directories should be exposed.",
             "m": "Audit directory structure and secure sensitive directories.",
-            "h": "Restrict access to critical directories via authentication.",
+            "h": "Restrict access to critical directories via proper authentication.",
             "c": "Immediately restrict directory access and conduct a security audit."
         }
     }
@@ -885,6 +804,54 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     tool_vul_counts = {tool: len(vulns) for tool, vulns in proc_vul_list.items()}
     tool_labels = list(tool_vul_counts.keys())
     tool_values = list(tool_vul_counts.values())
+    
+    # Calculate Vulnerability Lists counts
+    vulnerability_categories = {
+        "Broken Access Control": ["gobuster_directory_traversal"],
+        "SQL Injection": ["wapiti_sqli"],
+        "Cross-Site Scripting": ["wapiti_xss", "uniscan_xss", "nikto"],
+        "Remote Code Execution (RCE)": ["uniscan_rce"],
+        "Server-Side Request Forgery (SSRF)": ["wapiti_http_headers", "wapiti_ssrf", "lbd", "nmap", "nmap_sqlserver", "nmap_mysql", "nmap_oracle"]
+    }
+    
+    vul_list_counts = {}
+    for category, tools in vulnerability_categories.items():
+        count = 0
+        for tool in tools:
+            tool_lower = tool.lower()
+            if tool_lower in proc_vul_list:
+                count += len(proc_vul_list[tool_lower])
+        vul_list_counts[category] = count
+    
+    vul_list_labels = list(vul_list_counts.keys())
+    vul_list_values = list(vul_list_counts.values())
+
+    # -------------------------------------------------------------------------
+    # Aggregate vulnerabilities by category using key phrases.
+    # -------------------------------------------------------------------------
+    vuln_category_counts = {
+        "Broken Access Control": 0,
+        "SQL Injection": 0,
+        "Cross-Site Scripting": 0,
+        "Remote Code Execution": 0,
+        "Server-Side Request Forgery": 0
+    }
+    for tool, vulns in proc_vul_list.items():
+        for vuln, _ in vulns:
+            vuln_lower = vuln.lower()
+            if "sql injection" in vuln_lower or "sqli" in vuln_lower:
+                vuln_category_counts["SQL Injection"] += 1
+            elif "xss" in vuln_lower:
+                vuln_category_counts["Cross-Site Scripting"] += 1
+            elif "rce" in vuln_lower:
+                vuln_category_counts["Remote Code Execution"] += 1
+            elif "ssrf" in vuln_lower:
+                vuln_category_counts["Server-Side Request Forgery"] += 1
+            elif "path traversal" in vuln_lower or "ccs injection" in vuln_lower or "access control" in vuln_lower:
+                vuln_category_counts["Broken Access Control"] += 1
+
+    vuln_category_labels = list(vuln_category_counts.keys())
+    vuln_category_values = list(vuln_category_counts.values())
 
     # -------------------------------------------------------------------------
     # 3. Build the HTML content with embedded charts (using Chart.js)
@@ -906,7 +873,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append("  <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
     html_content.append("</head>")
     html_content.append("<body>")
-
+    
     # Header and High-Level Summary
     html_content.append(f"<h1>Scan Report for {target}</h1>")
     html_content.append("<h2>High-Level Summary</h2>")
@@ -926,29 +893,34 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append("</td></tr>")
     html_content.append(f"<tr><td><strong>Overall Risk Rating:</strong></td><td>{overall_rating}</td></tr>")
     html_content.append("</table>")
-
+    
     # -------------------------------------------------------------------------
-    # 4. Insert Pie Charts before Detailed Tool Results
+    # 4. Insert Pie Charts before Detailed Tool Results (3 charts side by side)
     # -------------------------------------------------------------------------
     html_content.append("<h2>Charts</h2>")
     html_content.append("<div style='display: flex; justify-content: space-around; align-items: center;'>")
     html_content.append("  <div style='text-align: center;'>")
     html_content.append("    <h3>Severity Breakdown Pie Chart</h3>")
-    html_content.append("    <canvas id='severityPieChart' width='350' height='250'></canvas>")
+    html_content.append("    <canvas id='severityPieChart' width='250' height='250'></canvas>")
     html_content.append("  </div>")
     html_content.append("  <div style='text-align: center;'>")
     html_content.append("    <h3>Vulnerability Detected by Tool Pie Chart</h3>")
-    html_content.append("    <canvas id='toolPieChart' width='350' height='250'></canvas>")
+    html_content.append("    <canvas id='toolPieChart' width='250' height='300'></canvas>")
+    html_content.append("  </div>")
+    html_content.append("  <div style='text-align: center;'>")
+    html_content.append("    <h3>Vulnerability Lists Pie Chart</h3>")
+    html_content.append("    <canvas id='vulListPieChart' width='300' height='300'></canvas>")
     html_content.append("  </div>")
     html_content.append("</div>")
     
     # JavaScript to render the charts using Chart.js
     html_content.append("<script>")
+    # Severity Breakdown Chart
     html_content.append("var severityData = {")
     html_content.append("  labels: " + json.dumps(severity_labels) + ",")
     html_content.append("  datasets: [{")
     html_content.append("    data: " + json.dumps(severity_values) + ",")
-    html_content.append("    backgroundColor: ['#ff0000', '#ff6600', '#ffff00', '#66ff66']")
+    html_content.append("    backgroundColor: ['#C70039', '#FF5733', '#FFC300', '#DAF7A6']")
     html_content.append("  }]")
     html_content.append("};")
     html_content.append("var ctx1 = document.getElementById('severityPieChart').getContext('2d');")
@@ -962,6 +934,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
       }
     });
     """)
+    # Vulnerability Detected by Tool Chart
     html_content.append("var toolData = {")
     html_content.append("  labels: " + json.dumps(tool_labels) + ",")
     html_content.append("  datasets: [{")
@@ -980,8 +953,27 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
       }
     });
     """)
+    # Vulnerability Lists Chart
+    html_content.append("var vulListData = {")
+    html_content.append("  labels: " + json.dumps(vul_list_labels) + ",")
+    html_content.append("  datasets: [{")
+    html_content.append("    data: " + json.dumps(vul_list_values) + ",")
+    html_content.append("    backgroundColor: " + json.dumps(["#8e44ad", "#2980b9", "#27ae60", "#f39c12", "#c0392b"]))
+    html_content.append("  }]")
+    html_content.append("};")
+    html_content.append("var ctx3 = document.getElementById('vulListPieChart').getContext('2d');")
+    html_content.append("""
+    new Chart(ctx3, {
+      type: 'pie',
+      data: vulListData,
+      options: {
+        responsive: false,
+        maintainAspectRatio: false
+      }
+    });
+    """)
     html_content.append("</script>")
-
+    
     # -------------------------------------------------------------------------
     # 5. Detailed Tool Results Table
     # -------------------------------------------------------------------------
@@ -993,9 +985,9 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append("<th>Vulnerability Information</th>")
     html_content.append("<th>Recommended Remediation</th>")
     html_content.append("</tr>")
-
+    
     severity_order = {"l": 1, "m": 2, "h": 3, "c": 4}
-
+    
     for tool, vulns in proc_vul_list.items():
         tool_key = tool.lower()
         worst_sev = None
@@ -1014,18 +1006,17 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
         html_content.append(f"<td>{info_text}</td>")
         html_content.append(f"<td>{reme_text}</td>")
         html_content.append("</tr>")
-
+    
     html_content.append("</table>")
     html_content.append("</body></html>")
-
+    
     # -------------------------------------------------------------------------
     # 6. Write the HTML content to file
     # -------------------------------------------------------------------------
     with open(report_html_file, "w", encoding="utf-8") as f:
         f.write("\n".join(html_content))
-
+    
     print(f"[+] HTML report generated: {report_html_file}")
-
 
 
 # Global variables
@@ -1058,14 +1049,36 @@ def get_target_ip(target):
     except socket.gaierror:
         return "Unknown"
 
+# ---------------------------
+# Main function
+# ---------------------------
 def main():
-    print_banner()  # Display the ASCII art banner at the start
-
-    global event  
-    parser = argparse.ArgumentParser()
-    parser.add_argument('target', metavar='URL', help='Target URL to scan.')
+    print_banner()
+    # Set up argument parser with mutually exclusive options.
+    parser = argparse.ArgumentParser(add_help=False)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-V", "-v", action="store_true", help="Print version information")
+    group.add_argument("-U", "-u", action="store_true", help="Replace every file/directory with a git clone")
+    group.add_argument("-H", "-h", "-help", action="store_true", help="Show help message")
+    # 'target' is optional if a flag is provided
+    parser.add_argument("target", nargs="?", help="Target URL to scan")
     args = parser.parse_args()
 
+    if args.V:
+        print(f"Version: {VERSION}")
+        sys.exit(0)
+    elif args.U:
+        os.system("git clone https://github.com/parkkung456/VULNscan.git")
+        sys.exit(0)
+    elif args.H:
+        show_help()
+        sys.exit(0)
+    elif not args.target:
+        # If no target is provided and no flag, show help.
+        show_help()
+        sys.exit(0)
+
+    # Otherwise, run the normal scan.
     target = url_maker(args.target)  # Ensure correct URL format
     target_ip = get_target_ip(target)  # Get the resolved IP address
     wapiti_target = wapiti_url(target)  # Get the properly formatted Wapiti URL
@@ -1124,12 +1137,9 @@ def main():
     start_time = time.time()
     for i, (tool_name, command) in enumerate(tool_list):
         output = execute_scan(tool_name, command, target, event)
-
-        # If no output is returned, count it as a skipped tool.
         if output is None:
             tools_skipped_count += 1
             continue
-
         detected_vulns = detect_errors(tool_name, output, raw_report_file)
         if detected_vulns:
             proc_vul_list[tool_name] = detected_vulns
@@ -1147,27 +1157,24 @@ def main():
             else:
                 severity_counts[severity] = 1
 
-    # Print final summary details
     print("\nFinal Summary:")
-    print("-----------------------------------------------------------------------------------")
+    print("----------------------")
     print(f"Total Vulnerability Task check       : {tasks_executed}")
     print(f"Total Tool skipped                   : {tools_skipped_count}")
     print(f"Total Vulnerability Thread detected  : CRITICAL({severity_counts.get('c', 0)}), HIGH ({severity_counts.get('h', 0)}), MEDIUM({severity_counts.get('m', 0)}), LOW ({severity_counts.get('l', 0)})")
     print(f"Total time from scan                 : {total_time:.2f} seconds")
-    print("-----------------------------------------------------------------------------------")
+    print("----------------------")
 
     generate_report(proc_vul_list, target, raw_report_file)
     generate_html_report(
-    proc_vul_list=proc_vul_list,
-    target=target,
-    target_ip=target_ip,
-    severity_counts=severity_counts,
-    tasks_executed=tasks_executed,
-    tools_skipped_count=tools_skipped_count,
-    total_time=total_time
+        proc_vul_list=proc_vul_list,
+        target=target,
+        target_ip=target_ip,
+        severity_counts=severity_counts,
+        tasks_executed=tasks_executed,
+        tools_skipped_count=tools_skipped_count,
+        total_time=total_time
     )
-
-
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C (skip task)
