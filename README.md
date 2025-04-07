@@ -1,6 +1,6 @@
-# VulnScan - Automated Web Vulnerability Scanner
+# VulnScan - Automated Web Server Vulnerability Scanner
 
-VulnScan is a lightweight and extensible automated vulnerability scanner for websites. It aggregates results from well-known tools like `nmap`, `nikto`, `uniscan`, `wapiti`, `gobuster`, and more to detect common web vulnerabilities with clear categorization, severity scoring, and comprehensive reporting (including HTML and TXT formats).
+VulnScan is a Multi-tool lightweight and extensible automated vulnerability scanner for websites. It aggregates results from well-known tools like `nmap`, `nikto`, `uniscan`, `wapiti`, `gobuster`, and more to detect common web vulnerabilities with clear categorization, severity scoring, and comprehensive reporting (including HTML and TXT formats).
 
 ---
 
