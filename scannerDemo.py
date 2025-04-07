@@ -165,23 +165,27 @@ def print_vulnerability_summary(proc_vul_list):
 def execute_scan(tool_name, command, target, event):
     """Executes the scanning tool dynamically and allows skipping on CTRL+C."""
     global skip_current_tool
-
+    
     # Dynamic scan message for different tools
     tool_messages = {
         "nmap": " - Checking for open ports...",
-	"nmap_sqlserver": " - Checking for SQL Server...",
-	"nmap_mysql": " - Checking for MySQL Server...",
-	"nmap_oracle": " - Checking for Oracle Server...",
+        "nmap_sqlserver": " - Checking for SQL Server...",
+        "nmap_mysql": " - Checking for MySQL Server...",
+        "nmap_oracle": " - Checking for Oracle Server...",
         "nikto": " - Checking for Apache Expect XSS Header...",
         "uniscan_rce": " - Performing RCE & RFI scan...",
         "uniscan_xss": " - Performing BSQLi, SQLi, & XSS scan...",
         "lbd": " - Checking for load balancing...",
-	"wapiti_sqli": " - Checking for SQL Injection...",
-	"wapiti_ssrf": " - Checking for Server-side Request Forgery...",
-	"wapiti_xss": " - Checking for Cross-site Scripting...",
-	"wapiti_http_headers": " - Checking for HTTP Header security...",
-	"gobuster_directory_traversal": " - Checking for Directiory Traversal...",
+        "wapiti_sqli": " - Checking for SQL Injection...",
+        "wapiti_ssrf": " - Checking for Server-side Request Forgery...",
+        "wapiti_xss": " - Checking for Cross-site Scripting...",
+        "gobuster_directory_traversal": " - Checking for Directiory Traversal...",
+        "uniscan_directory_traversal": " - Checking for Accessible Directiory...",
+        "uniscan_file_traversal": " - Checking for Accessible File...",
+        "nikto_outdated": " - Checking for Outdated components...",
+        "nikto_accessible_paths": " - Checking for Accessible Paths...",
     }
+    
     scan_message = tool_messages[tool_name.lower()]
 
     # Print tool execution
@@ -252,14 +256,39 @@ def detect_errors(tool_name, output, raw_report_file):
         line = line.strip()
 
         # Check for Wapiti-specific patterns for all Wapiti tools
-        if tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss", "wapiti_http_headers"]:
-            if re.match(r"^\[\+\].*\(([1-4])\)$", line):  # Detects [+] ... (3)
-                detected_vulns.append((line, "m"))  # Mark as Medium severity
+        if tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss"]:
+            wapiti_match = re.match(r"^\[\+\].*\(([1-5])\)$", line)
+            if wapiti_match:
+                severity_rating = int(wapiti_match.group(1))
+                if severity_rating in [1, 2]:
+                    severity = "l"
+                elif severity_rating == 3:
+                    severity = "m"
+                elif severity_rating in [4, 5]:
+                    severity = "h"
+                else:
+                    severity = "l"  # Fallback
+
+                detected_vulns.append((line, severity))
+                severity_label = {
+                    "c": "CRITICAL",
+                    "h": "HIGH",
+                    "m": "MEDIUM",
+                    "l": "LOW"
+                }.get(severity, "INFO")
+
                 print(
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
-                    f"detected as {bcolors.BADFAIL}MEDIUM{bcolors.ENDC}"
+                    f"detected as {bcolors.BADFAIL}{severity_label}{bcolors.ENDC}"
                 )
-
+        # Check for Uniscan brute-force file/directory output
+        elif tool_name.lower() in ["uniscan_file_traversal", "uniscan_directory_traversal"]:
+            if line.startswith("| [+] CODE: 200 URL:"):
+                detected_vulns.append((line, "h"))
+                print(
+                    f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
+                    f"detected as {bcolors.BADFAIL}HIGH{bcolors.ENDC}"
+                )
         # Check for gobuster directory traversal output
         elif tool_name.lower() in ["gobuster_directory_traversal"]:
             # Remove ANSI escape sequences from the line
@@ -282,6 +311,14 @@ def detect_errors(tool_name, output, raw_report_file):
                             f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
                             f"detected as {bcolors.BADFAIL}LOW{bcolors.ENDC}"
                         )
+        # Check for Uniscan-specific output that starts with '| [+]'
+        elif tool_name.lower() in ["uniscan_xss", "uniscan_rce"]:
+            if line.startswith("| [+]"):
+                detected_vulns.append((line, "m"))  # Default to Medium severity
+                print(
+                    f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
+                    f"detected as {bcolors.BADFAIL}MEDIUM{bcolors.ENDC}"
+                )
 
         # Check for general vulnerability patterns for other tools
         else:
@@ -382,17 +419,35 @@ def generate_report(proc_vul_list, target, raw_report_file):
             "h": "Wapiti XSS (High): High-risk XSS vulnerability discovered.",
             "c": "Wapiti XSS (Critical): Critical XSS vulnerability detected that may allow exploitation."
         },
-        "wapiti_http_headers": {
-            "l": "Wapiti HTTP Headers (Low): No major issues detected in HTTP header configuration.",
-            "m": "Wapiti HTTP Headers (Medium): Some header misconfigurations identified.",
-            "h": "Wapiti HTTP Headers (High): Critical HTTP header misconfigurations detected.",
-            "c": "Wapiti HTTP Headers (Critical): Severe HTTP header vulnerabilities discovered."
-        },
         "gobuster_directory_traversal": {
             "l": "Gobuster (Low): Directory listing appears benign.",
             "m": "Gobuster (Medium): Found directories that might expose non-sensitive content.",
             "h": "Gobuster (High): Critical directories accessible that should be restricted.",
             "c": "Gobuster (Critical): Sensitive directories exposed."
+        },
+        "uniscan_directory_bruteforce": {
+            "l": "Uniscan Directory Bruteforce (Low): Found public directories that pose minimal risk.",
+            "m": "Uniscan Directory Bruteforce (Medium): Discovered potentially sensitive directories exposed.",
+            "h": "Uniscan Directory Bruteforce (High): High-risk directory exposure; could lead to unauthorized access.",
+            "c": "Uniscan Directory Bruteforce (Critical): Critical system directory exposed; immediate remediation required."
+        },
+        "uniscan_file_bruteforce": {
+            "l": "Uniscan File Bruteforce (Low): Found accessible files with low risk.",
+            "m": "Uniscan File Bruteforce (Medium): Potentially sensitive files exposed to the public.",
+            "h": "Uniscan File Bruteforce (High): High-risk files (e.g., configs, backups) exposed.",
+            "c": "Uniscan File Bruteforce (Critical): Critical files (e.g., credentials) accessible; immediate action needed."
+        },
+        "nikto_accessible_paths": {
+            "l": "Nikto Accessible Paths (Low): Minor exposure of non-sensitive accessible paths detected.",
+            "m": "Nikto Accessible Paths (Medium): Several accessible paths detected that might reveal sensitive data.",
+            "h": "Nikto Accessible Paths (High): Critical accessible paths detected exposing confidential files.",
+            "c": "Nikto Accessible Paths (Critical): Severe accessible paths vulnerability; unauthorized file access is possible."
+        },
+        "nikto_outdated": {
+            "l": "Nikto Outdated (Low): Outdated software components detected with minimal risk.",
+            "m": "Nikto Outdated (Medium): Outdated components identified that may be exploited under certain conditions.",
+            "h": "Nikto Outdated (High): Outdated software poses a high risk due to known vulnerabilities.",
+            "c": "Nikto Outdated (Critical): Critical outdated components detected; immediate patching is required."
         }
     }
 
@@ -464,17 +519,35 @@ def generate_report(proc_vul_list, target, raw_report_file):
             "h": "Implement robust input validation and output encoding measures.",
             "c": "Immediately remediate the XSS vulnerability and audit the application code."
         },
-        "wapiti_http_headers": {
-            "l": "Review HTTP header configurations; minor adjustments may be sufficient.",
-            "m": "Update server configurations to enforce security headers.",
-            "h": "Apply strict security policies on HTTP headers immediately.",
-            "c": "Immediately enforce comprehensive security headers and perform a server audit."
-        },
         "gobuster_directory_traversal": {
             "l": "Review directory permissions and ensure that only necessary directories are exposed.",
             "m": "Audit the directory structure and secure sensitive directories.",
             "h": "Restrict access to critical directories via proper authentication.",
             "c": "Immediately restrict directory access and conduct a security audit."
+        },
+        "uniscan_directory_bruteforce": {
+            "l": "Review publicly accessible directories and apply appropriate access restrictions.",
+            "m": "Restrict access to directories not meant for public exposure via .htaccess or server config.",
+            "h": "Harden server configuration, and ensure only whitelisted directories are public.",
+            "c": "Immediately secure exposed directories and perform a full access audit."
+        },
+        "uniscan_file_bruteforce": {
+            "l": "Verify the files are intended to be public and contain no sensitive information.",
+            "m": "Remove or secure files containing sensitive metadata or information.",
+            "h": "Restrict access to configuration or backup files; consider moving them outside the web root.",
+            "c": "Immediately revoke public access to critical files and audit for possible compromise."
+        },
+        "nikto_accessible_paths": {
+            "l": "Review file and directory permissions to ensure non-essential paths are not publicly accessible.",
+            "m": "Restrict access to sensitive directories using proper authentication and access control measures.",
+            "h": "Immediately secure the exposed paths by updating server configuration and applying strict access controls.",
+            "c": "Isolate the server and remediate access control issues immediately; perform a thorough security audit."
+        },
+        "nikto_outdated": {
+            "l": "Verify the software components and update if necessary.",
+            "m": "Patch the outdated components promptly; review vulnerability advisories for potential risks.",
+            "h": "Apply critical patches immediately; implement temporary workarounds if required.",
+            "c": "Immediately update the critical outdated software and conduct a comprehensive security review."
         }
     }
 
@@ -491,8 +564,11 @@ def generate_report(proc_vul_list, target, raw_report_file):
         "wapiti_sqli": " - Checking for SQL Injection...",
         "wapiti_ssrf": " - Checking for Server-side Request Forgery...",
         "wapiti_xss": " - Checking for Cross-site Scripting...",
-        "wapiti_http_headers": " - Checking for HTTP Header security...",
-        "gobuster_directory_traversal": " - Checking for Directiory Traversal..."
+        "gobuster_directory_traversal": " - Checking for Directiory Traversal...",
+        "uniscan_directory_traversal": " - Checking for Accessible Directiory...",
+        "uniscan_file_traversal": " - Checking for Accessible File...",
+        "nikto_outdated": " - Checking for Outdated components...",
+        "nikto_accessible_paths": " - Checking for Accessible Paths...",
     }
 
     # Mapping of tool names to commands from your original tool list.
@@ -508,8 +584,11 @@ def generate_report(proc_vul_list, target, raw_report_file):
         "wapiti_sqli": f"wapiti -m sql -u {target} --verbose 2",
         "wapiti_ssrf": f"wapiti -m ssrf -u {target} --verbose 2",
         "wapiti_xss": f"wapiti -m xss -u {target} --verbose 2",
-        "wapiti_http_headers": f"wapiti -m http_headers -u {target} --verbose 2",
-        "gobuster_directory_traversal": f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"
+        "gobuster_directory_traversal": f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}",
+        "uniscan_directory_traversal": f"uniscan -q -u {target}",
+        "uniscan_file_traversal": f"uniscan -w -u {target}",
+        "nikto_outdated": f"nikto -Plugins 'outdated' -host {target}",
+        "nikto_accessible_paths": f"nikto -Plugins 'paths' -host {target}",
     }
 
     # Helper to convert severity code to human-readable text.
@@ -573,11 +652,11 @@ def generate_report(proc_vul_list, target, raw_report_file):
         print(f"{bcolors.BADFAIL}Error writing reports: {e}{bcolors.ENDC}")
 
 def generate_html_report(proc_vul_list, target, target_ip, severity_counts, tasks_executed, 
-                         tools_skipped_count, total_time):
+                         tools_skipped_count, total_time, raw_report_file):
     """
     Creates an HTML report file in the 'scan_reports' folder, containing:
       - High-Level Summary
-      - Pie Charts:
+      - Bar Charts:
           1. Severity Breakdown
           2. Vulnerability Detected by Tool
           3. Vulnerability Category Breakdown
@@ -657,17 +736,35 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
             "h": "Wapiti XSS (High): High-risk XSS vulnerability discovered.",
             "c": "Wapiti XSS (Critical): Critical XSS vulnerability detected that may allow exploitation."
         },
-        "wapiti_http_headers": {
-            "l": "Wapiti HTTP Headers (Low): No major issues detected in HTTP header configuration.",
-            "m": "Wapiti HTTP Headers (Medium): Some header misconfigurations identified.",
-            "h": "Wapiti HTTP Headers (High): Critical HTTP header misconfigurations detected.",
-            "c": "Wapiti HTTP Headers (Critical): Severe HTTP header vulnerabilities discovered."
-        },
         "gobuster_directory_traversal": {
             "l": "Gobuster (Low): Directory listing appears benign.",
             "m": "Gobuster (Medium): Found directories that might expose non-sensitive content.",
             "h": "Gobuster (High): Critical directories accessible that should be restricted.",
             "c": "Gobuster (Critical): Sensitive directories exposed."
+        },
+        "uniscan_directory_bruteforce": {
+            "l": "Uniscan Directory Bruteforce (Low): Found public directories that pose minimal risk.",
+            "m": "Uniscan Directory Bruteforce (Medium): Discovered potentially sensitive directories exposed.",
+            "h": "Uniscan Directory Bruteforce (High): High-risk directory exposure; could lead to unauthorized access.",
+            "c": "Uniscan Directory Bruteforce (Critical): Critical system directory exposed; immediate remediation required."
+        },
+        "uniscan_file_bruteforce": {
+            "l": "Uniscan File Bruteforce (Low): Found accessible files with low risk.",
+            "m": "Uniscan File Bruteforce (Medium): Potentially sensitive files exposed to the public.",
+            "h": "Uniscan File Bruteforce (High): High-risk files (e.g., configs, backups) exposed.",
+            "c": "Uniscan File Bruteforce (Critical): Critical files (e.g., credentials) accessible; immediate action needed."
+        },
+        "nikto_accessible_paths": {
+            "l": "Nikto Accessible Paths (Low): Minor exposure of non-sensitive accessible paths detected.",
+            "m": "Nikto Accessible Paths (Medium): Several accessible paths detected that might reveal sensitive data.",
+            "h": "Nikto Accessible Paths (High): Critical accessible paths detected exposing confidential files.",
+            "c": "Nikto Accessible Paths (Critical): Severe accessible paths vulnerability; unauthorized file access is possible."
+        },
+        "nikto_outdated": {
+            "l": "Nikto Outdated (Low): Outdated software components detected with minimal risk.",
+            "m": "Nikto Outdated (Medium): Outdated components identified that may be exploited under certain conditions.",
+            "h": "Nikto Outdated (High): Outdated software poses a high risk due to known vulnerabilities.",
+            "c": "Nikto Outdated (Critical): Critical outdated components detected; immediate patching is required."
         }
     }
 
@@ -730,7 +827,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
             "l": "Limit outbound requests and review network firewall rules.",
             "m": "Implement input validation and restrict server-side requests.",
             "h": "Apply security patches and monitor outbound network traffic closely.",
-            "c": "Isolate the vulnerable service and review server configurations comprehensively."
+            "c": "Isolate the vulnerable service and conduct a comprehensive review of server configurations."
         },
         "wapiti_xss": {
             "l": "Ensure output encoding and implement a content security policy.",
@@ -738,25 +835,64 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
             "h": "Implement robust input validation and output encoding measures.",
             "c": "Immediately remediate the XSS vulnerability and audit the application code."
         },
-        "wapiti_http_headers": {
-            "l": "Review HTTP header configurations; minor adjustments may be sufficient.",
-            "m": "Update server configurations to enforce security headers.",
-            "h": "Apply strict security policies on HTTP headers immediately.",
-            "c": "Immediately enforce comprehensive security headers and perform a server audit."
-        },
         "gobuster_directory_traversal": {
-            "l": "Review directory permissions; only necessary directories should be exposed.",
-            "m": "Audit directory structure and secure sensitive directories.",
+            "l": "Review directory permissions and ensure that only necessary directories are exposed.",
+            "m": "Audit the directory structure and secure sensitive directories.",
             "h": "Restrict access to critical directories via proper authentication.",
             "c": "Immediately restrict directory access and conduct a security audit."
+        },
+        "uniscan_directory_bruteforce": {
+            "l": "Review publicly accessible directories and apply appropriate access restrictions.",
+            "m": "Restrict access to directories not meant for public exposure via .htaccess or server config.",
+            "h": "Harden server configuration, and ensure only whitelisted directories are public.",
+            "c": "Immediately secure exposed directories and perform a full access audit."
+        },
+        "uniscan_file_bruteforce": {
+            "l": "Verify the files are intended to be public and contain no sensitive information.",
+            "m": "Remove or secure files containing sensitive metadata or information.",
+            "h": "Restrict access to configuration or backup files; consider moving them outside the web root.",
+            "c": "Immediately revoke public access to critical files and audit for possible compromise."
+        },
+        "nikto_accessible_paths": {
+            "l": "Review file and directory permissions to ensure non-essential paths are not publicly accessible.",
+            "m": "Restrict access to sensitive directories using proper authentication and access control measures.",
+            "h": "Immediately secure the exposed paths by updating server configuration and applying strict access controls.",
+            "c": "Isolate the server and remediate access control issues immediately; perform a thorough security audit."
+        },
+        "nikto_outdated": {
+            "l": "Verify the software components and update if necessary.",
+            "m": "Patch the outdated components promptly; review vulnerability advisories for potential risks.",
+            "h": "Apply critical patches immediately; implement temporary workarounds if required.",
+            "c": "Immediately update the critical outdated software and conduct a comprehensive security review."
         }
     }
 
+    # Mapping of tool names to their scan messages.
+    tool_messages = {
+        "nmap": " - Checking for open ports...",
+        "nmap_sqlserver": " - Checking for SQL Server...",
+        "nmap_mysql": " - Checking for MySQL Server...",
+        "nmap_oracle": " - Checking for Oracle Server...",
+        "nikto": " - Checking for Apache Expect XSS Header...",
+        "uniscan_rce": " - Performing RCE & RFI scan...",
+        "uniscan_xss": " - Performing BSQLi, SQLi, & XSS scan...",
+        "lbd": " - Checking for load balancing...",
+        "wapiti_sqli": " - Checking for SQL Injection...",
+        "wapiti_ssrf": " - Checking for Server-side Request Forgery...",
+        "wapiti_xss": " - Checking for Cross-site Scripting...",
+        "gobuster_directory_traversal": " - Checking for Directiory Traversal...",
+        "uniscan_directory_traversal": " - Checking for Accessible Directiory...",
+        "uniscan_file_traversal": " - Checking for Accessible File...",
+        "nikto_outdated": " - Checking for Outdated components...",
+        "nikto_accessible_paths": " - Checking for Accessible Paths..."
+    }
+
+    # Mapping of tool names to commands from your original tool list.
     tool_command_dict = {
-        "nmap": f"nmap -sV {target_ip}",
-        "nmap_sqlserver": f"nmap -p1433 --open -Pn {target_ip}",
-        "nmap_mysql": f"nmap -p3306 --open -Pn {target_ip}",
-        "nmap_oracle": f"nmap -p1521 --open -Pn {target_ip}",
+        "nmap": f"nmap -sV {target}",
+        "nmap_sqlserver": f"nmap -p1433 --open -Pn {target}",
+        "nmap_mysql": f"nmap -p3306 --open -Pn {target}",
+        "nmap_oracle": f"nmap -p1521 --open -Pn {target}",
         "nikto": f"nikto -Plugins 'apache_expect_xss' -host {target}",
         "uniscan_rce": f"uniscan -s -u {target}",
         "uniscan_xss": f"uniscan -d -u {target}",
@@ -764,34 +900,73 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
         "wapiti_sqli": f"wapiti -m sql -u {target} --verbose 2",
         "wapiti_ssrf": f"wapiti -m ssrf -u {target} --verbose 2",
         "wapiti_xss": f"wapiti -m xss -u {target} --verbose 2",
-        "wapiti_http_headers": f"wapiti -m http_headers -u {target} --verbose 2",
-        "gobuster_directory_traversal": f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"
+        "gobuster_directory_traversal": f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}",
+        "uniscan_directory_traversal": f"uniscan -q -u {target}",
+        "uniscan_file_traversal": f"uniscan -w -u {target}",
+        "nikto_outdated": f"nikto -Plugins 'outdated' -host {target}",
+        "nikto_accessible_paths": f"nikto -Plugins 'paths' -host {target}"
     }
 
-    # -------------------------------------------------------------------------
-    # 2. Prepare HTML Report
-    # -------------------------------------------------------------------------
-    os.makedirs("scan_reports", exist_ok=True)
-    safe_target = target.replace("http://", "").replace("https://", "").replace("/", "_").replace(":", "_")
+    # Helper to convert severity code to human-readable text.
+    severity_text = {
+        "l": "low",
+        "m": "medium",
+        "h": "high",
+        "c": "critical"
+    }
+
+    # Define an ordering to determine the worst severity.
+    severity_order = {"l": 1, "m": 2, "h": 3, "c": 4}
+
     timestamp = datetime.now().strftime("%d-%m-%Y-%H%M")
+    safe_target = target.replace("http://", "").replace("https://", "").replace("/", "_").replace(":", "_")
     report_html_file = f"scan_reports/{timestamp}-scan_report_{safe_target}.html"
 
-    overall_rating = "None"
-    if severity_counts.get('c', 0) > 0:
-        overall_rating = "Critical"
-    elif severity_counts.get('h', 0) > 0:
-        overall_rating = "High"
-    elif severity_counts.get('m', 0) > 0:
-        overall_rating = "Medium"
-    elif severity_counts.get('l', 0) > 0:
-        overall_rating = "Low"
+    os.makedirs("scan_reports", exist_ok=True)
 
-    total_time_str = f"{total_time:.2f} seconds"
-
+    try:
+        with open(report_html_file, "w", encoding="utf-8") as f, open(raw_report_file, "a") as raw_report:
+            # Write raw text report header
+            f.write(f"Scan Report for {target}\n\n")
+            raw_report.write("\n== Vulnerability Summary ==\n")
+            
+            # For each tool that produced vulnerabilities, aggregate the findings.
+            for tool, vulns in proc_vul_list.items():
+                tool_key = tool.lower()
+                scan_msg = tool_messages.get(tool_key, "")
+                command_used = tool_command_dict.get(tool_key, "N/A")
+                
+                # Determine the worst severity for this tool.
+                worst_severity = None
+                for vuln, severity in vulns:
+                    if worst_severity is None or severity_order.get(severity, 0) > severity_order.get(worst_severity, 0):
+                        worst_severity = severity
+                if worst_severity is None:
+                    worst_severity = "l"
+                
+                threat_level = severity_text.get(worst_severity, worst_severity)
+                tool_info = vul_info_by_tool.get(tool_key, {})
+                tool_reme = vul_reme_by_tool.get(tool_key, {})
+                info_text = tool_info.get(worst_severity, "No information available.")
+                reme_text = tool_reme.get(worst_severity, "No remediation available.")
+                
+                # Write one consolidated block per tool.
+                f.write(f"Task : Running {tool}{scan_msg}\n")
+                f.write(f"Command : {command_used}\n")
+                f.write(f"Vulnerability threat level : {threat_level}\n")
+                f.write(f"Vulnerability Information: {info_text}\n")
+                f.write(f"Vulnerability remediation: {reme_text}\n")
+                f.write("\n")
+                
+                # For the raw report, list the aggregated result.
+                raw_report.write(f"== {tool} Aggregated Findings ==\n")
+                raw_report.write(f"Aggregated Severity: {worst_severity} ({threat_level})\n\n")          
+    except Exception as e:
+        print(f"{bcolors.BADFAIL}Error writing HTML report: {e}{bcolors.ENDC}")
     # -------------------------------------------------------------------------
     # Prepare data for the charts
     # -------------------------------------------------------------------------
-    # Severity Pie Chart data
+    # Severity Bar Chart data
     severity_labels = ["Critical", "High", "Medium", "Low"]
     severity_values = [
         severity_counts.get("c", 0),
@@ -800,18 +975,33 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
         severity_counts.get("l", 0)
     ]
 
-    # Vulnerability by Tool data
-    tool_vul_counts = {tool: len(vulns) for tool, vulns in proc_vul_list.items()}
-    tool_labels = list(tool_vul_counts.keys())
-    tool_values = list(tool_vul_counts.values())
+    # Group vulnerability by tool data for the bar chart
+    group_mapping = {
+        "nmap": ["nmap_sqlserver", "nmap", "nmap_oracle"],
+        "wapiti": ["wapiti_xss", "wapiti_ssrf", "wapiti_sqli"],
+        "uniscan": ["uniscan_rce", "uniscan_xss", "uniscan_directory_traversal", "uniscan_file_traversal"],
+        "lbd": ["lbd"],
+        "gobuster": ["gobuster_directory_traversal"],
+        "nikto": ["nikto", "nikto_accessible_paths", "nikto_outdated"]
+    }
+    grouped_vul_counts = {}
+    for group, tools in group_mapping.items():
+        count = 0
+        for tool in tools:
+            if tool in proc_vul_list:
+                count += len(proc_vul_list[tool])
+        grouped_vul_counts[group] = count
+
+    group_labels = list(grouped_vul_counts.keys())
+    group_values = list(grouped_vul_counts.values())
     
     # Calculate Vulnerability Lists counts
     vulnerability_categories = {
-        "Broken Access Control": ["gobuster_directory_traversal"],
+        "Broken Access Control": ["gobuster_directory_traversal", "uniscan_directory_traversal", "uniscan_file_traversal"],
         "SQL Injection": ["wapiti_sqli"],
         "Cross-Site Scripting": ["wapiti_xss", "uniscan_xss", "nikto"],
         "Remote Code Execution (RCE)": ["uniscan_rce"],
-        "Server-Side Request Forgery (SSRF)": ["wapiti_http_headers", "wapiti_ssrf", "lbd", "nmap", "nmap_sqlserver", "nmap_mysql", "nmap_oracle"]
+        "Server-Side Request Forgery (SSRF)": ["nikto_accessible_paths", "nikto_outdated", "wapiti_ssrf", "lbd", "nmap", "nmap_sqlserver", "nmap_mysql", "nmap_oracle", "nikto_accessible_paths", "nikto_outdated"]
     }
     
     vul_list_counts = {}
@@ -854,7 +1044,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     vuln_category_values = list(vuln_category_counts.values())
 
     # -------------------------------------------------------------------------
-    # 3. Build the HTML content with embedded charts (using Chart.js)
+    # 3. Build the HTML content with embedded charts and results (Bar Charts version)
     # -------------------------------------------------------------------------
     html_content = []
     html_content.append("<html>")
@@ -862,26 +1052,58 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append("  <meta charset='UTF-8' />")
     html_content.append("  <title>Vulnerability Scan Report</title>")
     html_content.append("  <style>")
-    html_content.append("    body { font-family: Arial, sans-serif; margin: 20px; }")
+    html_content.append("    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }")
+    html_content.append("    nav { background: #333; color: #fff; padding: 10px; }")
+    html_content.append("    nav .nav-container { display: flex; justify-content: space-between; align-items: center; }")
+    html_content.append("    nav .logo { font-size: 40px; font-weight: bold; }")
+    html_content.append("    nav ul { list-style: none; display: flex; margin: 0; padding: 0; }")
+    html_content.append("    nav ul li { margin-left: 20px; }")
+    html_content.append("    nav ul li a { color: #fff; text-decoration: none; }")
+    html_content.append("    nav ul li a:hover { text-decoration: underline; }")
+    html_content.append("    .content { margin: 20px; }")
     html_content.append("    h1, h2, h3 { margin-bottom: 0.3em; }")
     html_content.append("    table { border-collapse: collapse; width: 100%; margin-bottom: 2em; }")
     html_content.append("    th, td { border: 1px solid #ccc; padding: 8px; }")
     html_content.append("    th { background: #f2f2f2; }")
     html_content.append("    .summary-table td { vertical-align: top; }")
+    html_content.append("    .charts-container { display: flex; flex-wrap: wrap; justify-content: space-around; }")
+    html_content.append("    .chart-box { flex: 1; min-width: 300px; margin: 10px; }")
     html_content.append("  </style>")
     # Include Chart.js from a CDN
     html_content.append("  <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
     html_content.append("</head>")
     html_content.append("<body>")
-    
-    # Header and High-Level Summary
-    html_content.append(f"<h1>Scan Report for {target}</h1>")
-    html_content.append("<h2>High-Level Summary</h2>")
+
+    # -------------------------------------------------------------------------
+    # 3.1 Add the navigation bar at the top
+    # -------------------------------------------------------------------------
+    html_content.append("""
+    <nav>
+      <div class="nav-container">
+        <div class="logo">
+          <img src="logo.png" alt="Logo" style="width:50px; vertical-align:middle; margin-right:10px;">
+          VulnScan Report
+        </div>
+        <ul>
+          <li><a href="#vulnerabilities_summary">Vulnerabilities Summary</a></li>
+          <li><a href="#charts_section">Charts</a></li>
+        </ul>
+      </div>
+    </nav>
+    """)
+
+    # -------------------------------------------------------------------------
+    # 3.2 Main content container
+    # -------------------------------------------------------------------------
+    html_content.append("<div class='content'>")
+
+    # High-Level Summary
+    html_content.append(f"<h1 id='vulnerabilities_summary'>Vulnerabilities Summary</h1>")
     html_content.append("<table class='summary-table'>")
     html_content.append(f"<tr><td><strong>Target URL:</strong></td><td>{target}</td></tr>")
     html_content.append(f"<tr><td><strong>Resolved IP:</strong></td><td>{target_ip}</td></tr>")
     html_content.append(f"<tr><td><strong>Date and Time of Scan:</strong></td><td>{timestamp}</td></tr>")
-    html_content.append(f"<tr><td><strong>Total Scan Duration:</strong></td><td>{total_time_str}</td></tr>")
+    html_content.append(f"<tr><td><strong>Total Scan Duration:</strong></td><td>{total_time:.2f} seconds</td></tr>")
     html_content.append(f"<tr><td><strong>Total Tasks Executed:</strong></td><td>{tasks_executed}</td></tr>")
     html_content.append(f"<tr><td><strong>Total Tools Skipped:</strong></td><td>{tools_skipped_count}</td></tr>")
     html_content.append("<tr><td><strong>Severity Breakdown:</strong></td>")
@@ -891,89 +1113,110 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append(f"Medium: {severity_counts.get('m', 0)}<br>")
     html_content.append(f"Low: {severity_counts.get('l', 0)}")
     html_content.append("</td></tr>")
+
+    overall_rating = "None"
+    if severity_counts.get('c', 0) > 0:
+        overall_rating = "Critical"
+    elif severity_counts.get('h', 0) > 0:
+        overall_rating = "High"
+    elif severity_counts.get('m', 0) > 0:
+        overall_rating = "Medium"
+    elif severity_counts.get('l', 0) > 0:
+        overall_rating = "Low"
+
     html_content.append(f"<tr><td><strong>Overall Risk Rating:</strong></td><td>{overall_rating}</td></tr>")
     html_content.append("</table>")
-    
+
     # -------------------------------------------------------------------------
-    # 4. Insert Pie Charts before Detailed Tool Results (3 charts side by side)
+    # 3.3 Insert Canvas elements for the bar charts (displayed side by side)
     # -------------------------------------------------------------------------
-    html_content.append("<h2>Charts</h2>")
-    html_content.append("<div style='display: flex; justify-content: space-around; align-items: center;'>")
-    html_content.append("  <div style='text-align: center;'>")
-    html_content.append("    <h3>Severity Breakdown Pie Chart</h3>")
-    html_content.append("    <canvas id='severityPieChart' width='250' height='250'></canvas>")
-    html_content.append("  </div>")
-    html_content.append("  <div style='text-align: center;'>")
-    html_content.append("    <h3>Vulnerability Detected by Tool Pie Chart</h3>")
-    html_content.append("    <canvas id='toolPieChart' width='250' height='300'></canvas>")
-    html_content.append("  </div>")
-    html_content.append("  <div style='text-align: center;'>")
-    html_content.append("    <h3>Vulnerability Lists Pie Chart</h3>")
-    html_content.append("    <canvas id='vulListPieChart' width='300' height='300'></canvas>")
-    html_content.append("  </div>")
+    html_content.append("<div class='charts-container' id='charts_section'>")
+    html_content.append("<div class='chart-box'>")
+    html_content.append("<h3>Severity Breakdown Bar Chart</h3>")
+    html_content.append("<canvas id='severityBarChart' width='400' height='400'></canvas>")
     html_content.append("</div>")
-    
-    # JavaScript to render the charts using Chart.js
+    html_content.append("<div class='chart-box'>")
+    html_content.append("<h3>Vulnerability Detected by Tool Bar Chart</h3>")
+    html_content.append("<canvas id='toolBarChart' width='400' height='400'></canvas>")
+    html_content.append("</div>")
+    html_content.append("<div class='chart-box'>")
+    html_content.append("<h3>Vulnerability Lists Bar Chart</h3>")
+    html_content.append("<canvas id='vulListBarChart' width='400' height='400'></canvas>")
+    html_content.append("</div>")
+    html_content.append("</div>")
+
+    # -------------------------------------------------------------------------
+    # 4. Chart.js Scripts (Bar Chart version)
+    # -------------------------------------------------------------------------
     html_content.append("<script>")
-    # Severity Breakdown Chart
+    # Severity Bar Chart
     html_content.append("var severityData = {")
     html_content.append("  labels: " + json.dumps(severity_labels) + ",")
     html_content.append("  datasets: [{")
+    html_content.append("    label: 'Severity Count',")
     html_content.append("    data: " + json.dumps(severity_values) + ",")
     html_content.append("    backgroundColor: ['#C70039', '#FF5733', '#FFC300', '#DAF7A6']")
     html_content.append("  }]")
     html_content.append("};")
-    html_content.append("var ctx1 = document.getElementById('severityPieChart').getContext('2d');")
     html_content.append("""
-    new Chart(ctx1, {
-      type: 'pie',
+    new Chart(document.getElementById('severityBarChart'), {
+      type: 'bar',
       data: severityData,
       options: {
         responsive: false,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
       }
     });
     """)
-    # Vulnerability Detected by Tool Chart
+    # Tool Bar Chart
     html_content.append("var toolData = {")
-    html_content.append("  labels: " + json.dumps(tool_labels) + ",")
+    html_content.append("  labels: " + json.dumps(group_labels) + ",")
     html_content.append("  datasets: [{")
-    html_content.append("    data: " + json.dumps(tool_values) + ",")
-    html_content.append("    backgroundColor: " + json.dumps(["#3366cc", "#dc3912", "#ff9900", "#109618", "#990099", "#0099c6", "#dd4477", "#66aa00", "#b82e2e", "#316395"]))
+    html_content.append("    label: 'Vulnerabilities by Tool',")
+    html_content.append("    data: " + json.dumps(group_values) + ",")
+    html_content.append("    backgroundColor: ['#3366cc', '#dc3912', '#ff9900', '#109618', '#990099', '#0099c6']")
     html_content.append("  }]")
     html_content.append("};")
-    html_content.append("var ctx2 = document.getElementById('toolPieChart').getContext('2d');")
     html_content.append("""
-    new Chart(ctx2, {
-      type: 'pie',
+    new Chart(document.getElementById('toolBarChart'), {
+      type: 'bar',
       data: toolData,
       options: {
         responsive: false,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
       }
     });
     """)
-    # Vulnerability Lists Chart
+    # Vulnerability Lists Bar Chart
     html_content.append("var vulListData = {")
     html_content.append("  labels: " + json.dumps(vul_list_labels) + ",")
     html_content.append("  datasets: [{")
+    html_content.append("    label: 'Vulnerabilities by Category',")
     html_content.append("    data: " + json.dumps(vul_list_values) + ",")
-    html_content.append("    backgroundColor: " + json.dumps(["#8e44ad", "#2980b9", "#27ae60", "#f39c12", "#c0392b"]))
+    html_content.append("    backgroundColor: ['#8e44ad', '#2980b9', '#27ae60', '#f39c12', '#c0392b']")
     html_content.append("  }]")
     html_content.append("};")
-    html_content.append("var ctx3 = document.getElementById('vulListPieChart').getContext('2d');")
     html_content.append("""
-    new Chart(ctx3, {
-      type: 'pie',
+    new Chart(document.getElementById('vulListBarChart'), {
+      type: 'bar',
       data: vulListData,
       options: {
         responsive: false,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
       }
     });
     """)
     html_content.append("</script>")
-    
+
     # -------------------------------------------------------------------------
     # 5. Detailed Tool Results Table
     # -------------------------------------------------------------------------
@@ -985,7 +1228,7 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
     html_content.append("<th>Vulnerability Information</th>")
     html_content.append("<th>Recommended Remediation</th>")
     html_content.append("</tr>")
-    
+
     severity_order = {"l": 1, "m": 2, "h": 3, "c": 4}
     
     for tool, vulns in proc_vul_list.items():
@@ -996,27 +1239,30 @@ def generate_html_report(proc_vul_list, target, target_ip, severity_counts, task
                 worst_sev = sev_code
         if worst_sev is None:
             worst_sev = "l"
+
         info_text = vul_info_by_tool.get(tool_key, {}).get(worst_sev, "No information available.")
         reme_text = vul_reme_by_tool.get(tool_key, {}).get(worst_sev, "No remediation available.")
         command_used = tool_command_dict.get(tool_key, "N/A")
         severity_label = {"c": "CRITICAL", "h": "HIGH", "m": "MEDIUM", "l": "LOW"}.get(worst_sev, "INFO")
+
         html_content.append("<tr>")
         html_content.append(f"<td>{command_used}</td>")
         html_content.append(f"<td>{severity_label}</td>")
         html_content.append(f"<td>{info_text}</td>")
         html_content.append(f"<td>{reme_text}</td>")
         html_content.append("</tr>")
-    
+
     html_content.append("</table>")
+    html_content.append("</div>")  # Close .content div
     html_content.append("</body></html>")
-    
+
     # -------------------------------------------------------------------------
     # 6. Write the HTML content to file
     # -------------------------------------------------------------------------
     with open(report_html_file, "w", encoding="utf-8") as f:
         f.write("\n".join(html_content))
     
-    print(f"[+] HTML report generated: {report_html_file}")
+    print(f"HTML report generated: {bcolors.OKGREEN} {report_html_file}")
 
 
 # Global variables
@@ -1049,18 +1295,14 @@ def get_target_ip(target):
     except socket.gaierror:
         return "Unknown"
 
-# ---------------------------
-# Main function
-# ---------------------------
 def main():
     print_banner()
-    # Set up argument parser with mutually exclusive options.
+    # Set up argument parser...
     parser = argparse.ArgumentParser(add_help=False)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-V", "-v", action="store_true", help="Print version information")
     group.add_argument("-U", "-u", action="store_true", help="Replace every file/directory with a git clone")
     group.add_argument("-H", "-h", "-help", action="store_true", help="Show help message")
-    # 'target' is optional if a flag is provided
     parser.add_argument("target", nargs="?", help="Target URL to scan")
     args = parser.parse_args()
 
@@ -1070,23 +1312,35 @@ def main():
     elif args.U:
         os.system("git clone https://github.com/parkkung456/VULNscan.git")
         sys.exit(0)
-    elif args.H:
-        show_help()
-        sys.exit(0)
-    elif not args.target:
-        # If no target is provided and no flag, show help.
+    elif args.H or not args.target:
         show_help()
         sys.exit(0)
 
-    # Otherwise, run the normal scan.
-    target = url_maker(args.target)  # Ensure correct URL format
-    target_ip = get_target_ip(target)  # Get the resolved IP address
-    wapiti_target = wapiti_url(target)  # Get the properly formatted Wapiti URL
+    target = url_maker(args.target)
+    target_ip = get_target_ip(target)
+    wapiti_target = wapiti_url(target)
 
     if target_ip == "Unknown":
         print(f"{bcolors.BADFAIL}Error: Unable to resolve target IP for {target}. Please check your network or DNS settings.{bcolors.ENDC}")
         sys.exit(1)
 
+    # Define once before starting scan
+    timestamp = datetime.now().strftime("%d-%m-%Y-%H%M")
+    reports_dir = "scan_reports"
+    os.makedirs(reports_dir, exist_ok=True)
+    raw_report_file = os.path.join(
+        reports_dir,
+        f"{timestamp}-raw_report_{target.replace('http://', '').replace('https://', '').replace('/', '_')}.txt"
+    )
+
+    print(f"\n{bcolors.BOLD}Starting security scan on {bcolors.OKBLUE}{target}{bcolors.ENDC} "
+          f"({bcolors.OKGREEN}IP: {target_ip}{bcolors.ENDC})...\n")
+
+    if not check_internet():
+        print(f"{bcolors.BADFAIL}No internet connection. Exiting...{bcolors.ENDC}")
+        sys.exit(1)
+
+    # Define raw_report_file here
     timestamp = datetime.now().strftime("%d-%m-%Y-%H%M")
     reports_dir = "scan_reports"
     os.makedirs(reports_dir, exist_ok=True)
@@ -1094,9 +1348,6 @@ def main():
         reports_dir, 
         f"{timestamp}-raw_report_{target.replace('http://', '').replace('https://', '').replace('/', '_')}.txt"
     )
-
-    print(f"\n{bcolors.BOLD}Starting security scan on {bcolors.OKBLUE}{target}{bcolors.ENDC} "
-          f"({bcolors.OKGREEN}IP: {target_ip}{bcolors.ENDC})...\n")
 
     if not check_internet():
         print(f"{bcolors.BADFAIL}No internet connection. Exiting...{bcolors.ENDC}")
@@ -1115,11 +1366,13 @@ def main():
         ["wapiti_sqli", f"wapiti -m sql -u {target} --verbose 2"],
         ["wapiti_ssrf", f"wapiti -m ssrf -u {target} --verbose 2"],
         ["wapiti_xss", f"wapiti -m xss -u {target} --verbose 2"],
-        ["wapiti_http_headers", f"wapiti -m http_headers -u {target} --verbose 2"],
-        ["gobuster_directory_traversal", f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"]
+        ["gobuster_directory_traversal", f"gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u {target}"],
+        ["uniscan_directory_traversal", f"uniscan -q -u {target}"],
+        ["uniscan_file_traversal", f"uniscan -w -u {target}"],
+        ["nikto_outdated", f"nikto -Plugins 'outdated' -host {target}"],
+        ["nikto_accessible_paths", f"nikto -Plugins 'paths' -host {target}"]
     ]
     
-    # Dynamically check tool availability and filter tool_list accordingly.
     tool_list = check_dynamic_tools(tool_list)
     tasks_executed = len(tool_list)
     tools_skipped_count = 0
@@ -1148,7 +1401,6 @@ def main():
 
     total_time = time.time() - start_time
 
-    # Compute severity counts without printing a separate vulnerability summary
     severity_counts = {"c": 0, "h": 0, "m": 0, "l": 0}
     for tool, vulns in proc_vul_list.items():
         for vuln, severity in vulns:
@@ -1173,10 +1425,13 @@ def main():
         severity_counts=severity_counts,
         tasks_executed=tasks_executed,
         tools_skipped_count=tools_skipped_count,
-        total_time=total_time
+        total_time=total_time,
+        raw_report_file=raw_report_file 
     )
 
+
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C (skip task)
-    signal.signal(signal.SIGQUIT, signal_handler)  # Handle Ctrl+Z (exit gracefully)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGQUIT, signal_handler)
     main()
+

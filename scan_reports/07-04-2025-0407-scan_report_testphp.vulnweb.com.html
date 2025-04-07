@@ -1,0 +1,219 @@
+<html>
+<head>
+  <meta charset='UTF-8' />
+  <title>Vulnerability Scan Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    nav { background: #333; color: #fff; padding: 10px; }
+    nav .nav-container { display: flex; justify-content: space-between; align-items: center; }
+    nav .logo { font-size: 40px; font-weight: bold; }
+    nav ul { list-style: none; display: flex; margin: 0; padding: 0; }
+    nav ul li { margin-left: 20px; }
+    nav ul li a { color: #fff; text-decoration: none; }
+    nav ul li a:hover { text-decoration: underline; }
+    .content { margin: 20px; }
+    h1, h2, h3 { margin-bottom: 0.3em; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 2em; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background: #f2f2f2; }
+    .summary-table td { vertical-align: top; }
+    .charts-container { display: flex; flex-wrap: wrap; justify-content: space-around; }
+    .chart-box { flex: 1; min-width: 300px; margin: 10px; }
+  </style>
+  <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+</head>
+<body>
+
+    <nav>
+      <div class="nav-container">
+        <div class="logo">
+          <img src="logo.png" alt="Logo" style="width:50px; vertical-align:middle; margin-right:10px;">
+          VulnScan Report
+        </div>
+        <ul>
+          <li><a href="#vulnerabilities_summary">Vulnerabilities Summary</a></li>
+          <li><a href="#charts_section">Charts</a></li>
+        </ul>
+      </div>
+    </nav>
+    
+<div class='content'>
+<h1 id='vulnerabilities_summary'>Vulnerabilities Summary</h1>
+<table class='summary-table'>
+<tr><td><strong>Target URL:</strong></td><td>http://testphp.vulnweb.com</td></tr>
+<tr><td><strong>Resolved IP:</strong></td><td>44.228.249.3</td></tr>
+<tr><td><strong>Date and Time of Scan:</strong></td><td>07-04-2025-0407</td></tr>
+<tr><td><strong>Total Scan Duration:</strong></td><td>1299.05 seconds</td></tr>
+<tr><td><strong>Total Tasks Executed:</strong></td><td>16</td></tr>
+<tr><td><strong>Total Tools Skipped:</strong></td><td>0</td></tr>
+<tr><td><strong>Severity Breakdown:</strong></td>
+<td>
+Critical: 0<br>
+High: 13<br>
+Medium: 719<br>
+Low: 1934
+</td></tr>
+<tr><td><strong>Overall Risk Rating:</strong></td><td>High</td></tr>
+</table>
+<div class='charts-container' id='charts_section'>
+<div class='chart-box'>
+<h3>Severity Breakdown Bar Chart</h3>
+<canvas id='severityBarChart' width='400' height='400'></canvas>
+</div>
+<div class='chart-box'>
+<h3>Vulnerability Detected by Tool Bar Chart</h3>
+<canvas id='toolBarChart' width='400' height='400'></canvas>
+</div>
+<div class='chart-box'>
+<h3>Vulnerability Lists Bar Chart</h3>
+<canvas id='vulListBarChart' width='400' height='400'></canvas>
+</div>
+</div>
+<script>
+var severityData = {
+  labels: ["Critical", "High", "Medium", "Low"],
+  datasets: [{
+    label: 'Severity Count',
+    data: [0, 13, 719, 1934],
+    backgroundColor: ['#C70039', '#FF5733', '#FFC300', '#DAF7A6']
+  }]
+};
+
+    new Chart(document.getElementById('severityBarChart'), {
+      type: 'bar',
+      data: severityData,
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+      }
+    });
+    
+var toolData = {
+  labels: ["nmap", "wapiti", "uniscan", "lbd", "gobuster", "nikto"],
+  datasets: [{
+    label: 'Vulnerabilities by Tool',
+    data: [1, 2544, 107, 1, 10, 3],
+    backgroundColor: ['#3366cc', '#dc3912', '#ff9900', '#109618', '#990099', '#0099c6']
+  }]
+};
+
+    new Chart(document.getElementById('toolBarChart'), {
+      type: 'bar',
+      data: toolData,
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+      }
+    });
+    
+var vulListData = {
+  labels: ["Broken Access Control", "SQL Injection", "Cross-Site Scripting", "Remote Code Execution (RCE)", "Server-Side Request Forgery (SSRF)"],
+  datasets: [{
+    label: 'Vulnerabilities by Category',
+    data: [23, 848, 943, 0, 854],
+    backgroundColor: ['#8e44ad', '#2980b9', '#27ae60', '#f39c12', '#c0392b']
+  }]
+};
+
+    new Chart(document.getElementById('vulListBarChart'), {
+      type: 'bar',
+      data: vulListData,
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+      }
+    });
+    
+</script>
+<h2>Detailed Tool Results</h2>
+<table>
+<tr>
+<th>Command Executed</th>
+<th>Threat Level</th>
+<th>Vulnerability Information</th>
+<th>Recommended Remediation</th>
+</tr>
+<tr>
+<td>nmap -sV http://testphp.vulnweb.com</td>
+<td>LOW</td>
+<td>Nmap (Low): Open port detected. Low risk if no sensitive services are running.</td>
+<td>Review the open ports and disable services that are unnecessary.</td>
+</tr>
+<tr>
+<td>nikto -Plugins 'apache_expect_xss' -host http://testphp.vulnweb.com</td>
+<td>LOW</td>
+<td>Nikto (Low): Minor misconfigurations noted in HTTP headers.</td>
+<td>Verify web server configurations and minimize banner information.</td>
+</tr>
+<tr>
+<td>uniscan -d -u http://testphp.vulnweb.com</td>
+<td>MEDIUM</td>
+<td>Uniscan XSS (Medium): XSS vulnerability that may be exploitable under certain conditions.</td>
+<td>Implement stricter input validation and output encoding.</td>
+</tr>
+<tr>
+<td>lbd http://testphp.vulnweb.com</td>
+<td>MEDIUM</td>
+<td>LBD (Medium): Minor load balancing misconfiguration detected.</td>
+<td>Review load balancer settings and apply necessary security updates.</td>
+</tr>
+<tr>
+<td>wapiti -m sql -u http://testphp.vulnweb.com --verbose 2</td>
+<td>MEDIUM</td>
+<td>Wapiti SQLi (Medium): Potential SQL injection vulnerability requiring further analysis.</td>
+<td>Apply input sanitization and update vulnerable SQL queries.</td>
+</tr>
+<tr>
+<td>wapiti -m ssrf -u http://testphp.vulnweb.com --verbose 2</td>
+<td>MEDIUM</td>
+<td>Wapiti SSRF (Medium): Potential SSRF vulnerability identified.</td>
+<td>Implement input validation and restrict server-side requests.</td>
+</tr>
+<tr>
+<td>wapiti -m xss -u http://testphp.vulnweb.com --verbose 2</td>
+<td>MEDIUM</td>
+<td>Wapiti XSS (Medium): Potential XSS vulnerability that should be investigated.</td>
+<td>Patch the application to fix XSS vulnerabilities.</td>
+</tr>
+<tr>
+<td>gobuster dir -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -t 100 -u http://testphp.vulnweb.com</td>
+<td>LOW</td>
+<td>Gobuster (Low): Directory listing appears benign.</td>
+<td>Review directory permissions and ensure that only necessary directories are exposed.</td>
+</tr>
+<tr>
+<td>uniscan -q -u http://testphp.vulnweb.com</td>
+<td>HIGH</td>
+<td>No information available.</td>
+<td>No remediation available.</td>
+</tr>
+<tr>
+<td>uniscan -w -u http://testphp.vulnweb.com</td>
+<td>HIGH</td>
+<td>No information available.</td>
+<td>No remediation available.</td>
+</tr>
+<tr>
+<td>nikto -Plugins 'outdated' -host http://testphp.vulnweb.com</td>
+<td>LOW</td>
+<td>Nikto Outdated (Low): Outdated software components detected with minimal risk.</td>
+<td>Verify the software components and update if necessary.</td>
+</tr>
+<tr>
+<td>nikto -Plugins 'paths' -host http://testphp.vulnweb.com</td>
+<td>LOW</td>
+<td>Nikto Accessible Paths (Low): Minor exposure of non-sensitive accessible paths detected.</td>
+<td>Review file and directory permissions to ensure non-essential paths are not publicly accessible.</td>
+</tr>
+</table>
+</div>
+</body></html>
