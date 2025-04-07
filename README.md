@@ -85,5 +85,3 @@ This tool is designed for educational and authorized security auditing purposes 
 ## 🚀 Credits
 Developed and maintained by [@parkkung456](https://github.com/parkkung456/VULNscan)
 
-Forks, contributions, and feedback welcome!
-
