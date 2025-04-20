@@ -264,6 +264,7 @@ def wapiti_url(target):
 
 def detect_errors(tool_name, output, raw_report_file):
     detected_vulns = []
+    seen_lines = set()  # Track unique lines to avoid duplicates
 
     # Write the raw output to the report
     with open(raw_report_file, "a") as report:
@@ -273,9 +274,14 @@ def detect_errors(tool_name, output, raw_report_file):
     for line in output.splitlines():
         line = line.strip()
 
+        if not line or line in seen_lines:
+            continue  # Skip duplicate or empty lines
+
+        seen_lines.add(line)
+
         # Check for Wapiti-specific patterns for all Wapiti tools
         if tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss"]:
-            wapiti_match = re.match(r"^\[\+\].*\(([1-5])\)$", line)
+            wapiti_match = re.match(r"^\[\+\].*\((\d+)\)$", line)
             if wapiti_match:
                 severity_rating = int(wapiti_match.group(1))
                 if severity_rating in [1, 2]:
@@ -299,8 +305,7 @@ def detect_errors(tool_name, output, raw_report_file):
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
                     f"detected as {bcolors.BADFAIL}{severity_label}{bcolors.ENDC}"
                 )
-				
-        # Check for Uniscan brute-force file/directory output
+
         elif tool_name.lower() in ["uniscan_file_traversal", "uniscan_directory_traversal"]:
             if line.startswith("| [+] CODE: 200 URL:"):
                 detected_vulns.append((line, "h"))
@@ -308,14 +313,10 @@ def detect_errors(tool_name, output, raw_report_file):
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
                     f"detected as {bcolors.BADFAIL}HIGH{bcolors.ENDC}"
                 )
-				
-        # Check for gobuster directory traversal output
+
         elif tool_name.lower() in ["gobuster_directory_traversal"]:
-            # Remove ANSI escape sequences from the line
             clean_line = re.sub(r'\x1B\[[0-?]*[ -/]*[@-~]', '', line)
-            # Check if the cleaned line starts with "/"
             if clean_line.startswith("/"):
-                # Use a regex to extract the HTTP status code, e.g., (Status: 301)
                 status_match = re.search(r"\(Status:\s*(\d+)\)", clean_line)
                 if status_match:
                     status_code = int(status_match.group(1))
@@ -331,17 +332,15 @@ def detect_errors(tool_name, output, raw_report_file):
                             f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
                             f"detected as {bcolors.BADFAIL}LOW{bcolors.ENDC}"
                         )
-						
-        # Check for Uniscan-specific output that starts with '| [+]'
+
         elif tool_name.lower() in ["uniscan_xss", "uniscan_rce"]:
             if line.startswith("| [+]"):
-                detected_vulns.append((line, "m"))  # Default to Medium severity
+                detected_vulns.append((line, "m"))
                 print(
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
                     f"detected as {bcolors.BADFAIL}MEDIUM{bcolors.ENDC}"
                 )
 
-        # Check for general vulnerability patterns for other tools
         else:
             for pattern, severity in VULNERABILITY_PATTERNS.items():
                 if pattern.lower() in line.lower():
@@ -357,12 +356,12 @@ def detect_errors(tool_name, output, raw_report_file):
                         f"detected as {bcolors.BADFAIL}{severity_label}{bcolors.ENDC}"
                     )
 
-    # Save vulnerabilities to raw report
     with open(raw_report_file, "a") as report:
         for vuln, severity in detected_vulns:
             report.write(f"{vuln} - Severity: {severity}\n")
 
     return detected_vulns
+
 
 def generate_report(proc_vul_list, target, raw_report_file):
     """Generates a vulnerability report and appends it to the raw report.
