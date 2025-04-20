@@ -17,14 +17,14 @@ VERSION = "1.0"
 # Help function to display user guide
 def show_help():
     help_text = """
-Usage: python script.py [options] target
+Usage: python3 scanner.py [options] 
 
 Options:
   -V, -v           Print the version of this program.
   -U, -u           Replace every file and directory with:
                    git clone https://github.com/parkkung456/VULNscan.git
   -H, -h, help     Show this help message and exit.
-
+  target           Must be a DNS name string. for examples "goooogle.com", "testphp.vulnweb.com"
 If no option is provided, the program runs the normal vulnerability scan.
 """
     print(help_text)
@@ -330,7 +330,7 @@ def detect_errors(tool_name, output, raw_report_file):
                         print(
                             f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
                             f"detected as {bcolors.BADFAIL}LOW{bcolors.ENDC}"
-                        
+                        )
 						
         # Check for Uniscan-specific output that starts with '| [+]'
         elif tool_name.lower() in ["uniscan_xss", "uniscan_rce"]:
@@ -1429,7 +1429,7 @@ def main():
 
     # ---------- status bar: scan finished ----------
     print(bg_green(phase_bar + "Complete ]"))
-    parint()
+    print()
 # ---------- log‑file status banners ----------
     log_bar = "-> [  Creating log file from all task . . .  "
     print(bg_blue(log_bar + "Generating . . . ]"))
