@@ -35,7 +35,7 @@ VulnScan is a Multi-tool lightweight and extensible automated vulnerability scan
 
 ### Basic Command
 ```bash
-sudo python3 scannerDemo.py [options] target
+sudo python3 scanner.py [options]
 ```
 
 ### Options
@@ -45,6 +45,7 @@ sudo python3 scannerDemo.py [options] target
 | `-V` or `-v` | Print version information |
 | `-U` or `-u` | Replace local files with the latest from GitHub |
 | `-H` or `-h` or `-help` | Show help message |
+| `target` | DNS name. for an example "gooogle.com" |
 
 ---
 
