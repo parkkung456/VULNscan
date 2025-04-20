@@ -53,17 +53,17 @@ sudo python3 scanner.py [options]
 
 ### Run a full vulnerability scan on a target:
 ```bash
-sudo python3 scannerDemo.py testphp.vulnweb.com
+sudo python3 scanner.py testphp.vulnweb.com
 ```
 
 ### Update the scanner to the latest version from GitHub:
 ```bash
-python3 scannerDemo.py -U
+python3 scanner.py -U
 ```
 
 ### Check the version:
 ```bash
-python3 scannerDemo.py -V
+python3 scanner.py -V
 ```
 
 ---
