@@ -29,16 +29,16 @@ If no option is provided, the program runs the normal vulnerability scan.
 """
     print(help_text)
 
-# ANSI Colors for Terminal Output
 class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    BADFAIL = '\033[91m'
+    HEADER = '\033[38;2;203;108;230m'  # light magenta
+    OKBLUE = '\033[94m'  # light blue
+    OKGREEN = '\033[92m' # green
+    WARNING = '\033[93m' # yellow
+    BADFAIL = '\033[91m' # red
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+    CYAN = '\033[96m'    # extra option
 
 # Vulnerability detection mapping (specific to nmap results)
 VULNERABILITY_PATTERNS = {
@@ -208,7 +208,8 @@ def execute_scan(tool_name, command, target, event):
     scan_message = tool_messages[tool_name.lower()]
 
     # Print tool execution
-    print(f"{bcolors.OKBLUE}Running {tool_name}{bcolors.BOLD}{scan_message}{bcolors.ENDC}", flush=True)
+    print()
+    print(f"-> {bcolors.BOLD}{bcolors.HEADER}[{tool_name.upper()}]{bcolors.ENDC}{scan_message}", flush=True)
 
     # Reset skip flag
     skip_current_tool = False
@@ -368,7 +369,7 @@ def generate_report(proc_vul_list, target, raw_report_file):
     For each tool, only one consolidated block is printed using the worst severity detected.
     """
     if not proc_vul_list:
-        print(f"{bcolors.OKGREEN}Task complete. No vulnerability was found in this task.{bcolors.ENDC}")
+        print(f"Task complete. {bcolors.OKGREEN}No vulnerability was found in this task.{bcolors.ENDC}")
         return
 
     # Custom vulnerability information per tool and severity.
@@ -1399,7 +1400,7 @@ def main():
     # ---------- status bar: scan phase begins ----------
     print()
     phase_bar = "-> [  Main scan Phase Checking . . .  "
-    print(bg_blue(phase_bar + "Loading . . . ]"))
+    print(bg_blue(phase_bar + "Loading Task . . . ]"))
 
     tasks_executed      = len(tool_list)
     tools_skipped_count = 0
@@ -1421,7 +1422,7 @@ def main():
         if vulns:
             proc_vul_list[tool_name] = vulns
         else:
-            print(f"{bcolors.OKGREEN}Task complete. No vulnerability found for "
+            print(f"{bcolors.OKBLUE}Task complete.{bcolors.ENDC}{bcolors.OKGREEN}No vulnerability found for "
                   f"{tool_name}.{bcolors.ENDC}")
 
     total_time = time.time() - start_time
