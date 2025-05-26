@@ -1376,7 +1376,7 @@ def main():
 
     # ---------- tool list ----------
     tool_list = [
-        ["nmap",                     f"nmap -sV {target_ip}"],
+        ["nmap",                     f"nmap -sC -sV {target_ip}"],
         ["nmap_sqlserver",           f"nmap -p1433 --open -Pn {target_ip}"],
         ["nmap_mysql",               f"nmap -p3306 --open -Pn {target_ip}"],
         ["nmap_oracle",              f"nmap -p1521 --open -Pn {target_ip}"],
