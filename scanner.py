@@ -280,20 +280,53 @@ def detect_errors(tool_name, output, raw_report_file):
 
         seen_lines.add(line)
 
-        # Check for Wapiti-specific patterns for all Wapiti tools
-        if tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss"]:
+        # --- Nmap-specific detection logic ---
+        if tool_name.lower() == "nmap":
+            # Match open ports with service names and versions
+            nmap_match = re.match(r"^(\d+)/tcp\s+open\s+(\S+)\s+(.*)$", line)
+            if nmap_match:
+                port = int(nmap_match.group(1))
+                service = nmap_match.group(2).lower()
+                version_info = nmap_match.group(3)
+
+                risk_level = "l"  # Default LOW risk
+                # Add known high-risk ports and services
+                high_risk_ports = {
+                    21, 22, 23, 110, 143, 3306, 5432, 3389, 137, 138, 139, 445, 161, 162, 69, 5900, 9200, 11211, 5000
+                }
+                critical_ports = {23, 3389, 445}  # e.g., Telnet, RDP, SMB
+
+                if port in critical_ports:
+                    risk_level = "c"
+                elif port in high_risk_ports:
+                    risk_level = "h"
+                elif service in ["http", "smtp", "imap", "pop3"]:
+                    risk_level = "m"
+
+                # Extra check for outdated OpenSSH
+                if "OpenSSH 6.6.1p1" in version_info:
+                    risk_level = "h"
+                    line += " [Outdated OpenSSH detected]"
+
+                detected_vulns.append((line, risk_level))
+                severity_label = {
+                    "c": "CRITICAL",
+                    "h": "HIGH",
+                    "m": "MEDIUM",
+                    "l": "LOW"
+                }.get(risk_level, "INFO")
+
+                print(
+                    f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
+                    f"detected as {bcolors.BADFAIL}{severity_label}{bcolors.ENDC}"
+                )
+
+        # --- Existing tool handlers ---
+        elif tool_name.lower() in ["wapiti_sqli", "wapiti_ssrf", "wapiti_xss"]:
             wapiti_match = re.match(r"^\[\+\].*\((\d+)\)$", line)
             if wapiti_match:
                 severity_rating = int(wapiti_match.group(1))
-                if severity_rating in [1, 2]:
-                    severity = "l"
-                elif severity_rating == 3:
-                    severity = "m"
-                elif severity_rating in [4, 5]:
-                    severity = "h"
-                else:
-                    severity = "l"  # Fallback
-
+                severity = "l" if severity_rating in [1, 2] else "m" if severity_rating == 3 else "h"
                 detected_vulns.append((line, severity))
                 severity_label = {
                     "c": "CRITICAL",
@@ -301,7 +334,6 @@ def detect_errors(tool_name, output, raw_report_file):
                     "m": "MEDIUM",
                     "l": "LOW"
                 }.get(severity, "INFO")
-
                 print(
                     f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{line}{bcolors.ENDC} "
                     f"detected as {bcolors.BADFAIL}{severity_label}{bcolors.ENDC}"
@@ -321,18 +353,13 @@ def detect_errors(tool_name, output, raw_report_file):
                 status_match = re.search(r"\(Status:\s*(\d+)\)", clean_line)
                 if status_match:
                     status_code = int(status_match.group(1))
-                    if status_code == 200:
-                        detected_vulns.append((clean_line, "h"))
-                        print(
-                            f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
-                            f"detected as {bcolors.BADFAIL}HIGH{bcolors.ENDC}"
-                        )
-                    else:
-                        detected_vulns.append((clean_line, "l"))
-                        print(
-                            f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
-                            f"detected as {bcolors.BADFAIL}LOW{bcolors.ENDC}"
-                        )
+                    severity = "h" if status_code == 200 else "l"
+                    detected_vulns.append((clean_line, severity))
+                    label = "HIGH" if severity == "h" else "LOW"
+                    print(
+                        f"{bcolors.WARNING}[{tool_name}]{bcolors.ENDC} {bcolors.BOLD}{clean_line}{bcolors.ENDC} "
+                        f"detected as {bcolors.BADFAIL}{label}{bcolors.ENDC}"
+                    )
 
         elif tool_name.lower() in ["uniscan_xss", "uniscan_rce"]:
             if line.startswith("| [+]"):
@@ -362,6 +389,7 @@ def detect_errors(tool_name, output, raw_report_file):
             report.write(f"{vuln} - Severity: {severity}\n")
 
     return detected_vulns
+
 
 
 def generate_report(proc_vul_list, target, raw_report_file):
